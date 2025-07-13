@@ -24,3 +24,21 @@ static-checks:
 notebook:
 	jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser
 .PHONY: notebook
+
+build-docker:
+	docker build -t zbot-policy-walking .
+.PHONY: build-docker
+
+train:
+	docker run -d --gpus all \
+		-v $(CURDIR):/app \
+		$(if $(AWS_ACCESS_KEY_ID),-e AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID)) \
+		$(if $(AWS_SECRET_ACCESS_KEY),-e AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY)) \
+		$(if $(S3_BUCKET),-e S3_BUCKET=$(S3_BUCKET)) \
+		--cap-add SYS_ADMIN \
+		--device /dev/fuse \
+		--security-opt apparmor:unconfined \
+		--privileged \
+		zbot-policy-walking \
+		python -m train $(ARGS)
+.PHONY: train

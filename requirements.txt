@@ -1,8 +1,11 @@
 # requirements.txt
 
 # Training dependencies
-ksim=
+jax[cuda12]
+jaxlib==0.6.0
+ksim
 xax
+equinox==0.12.2
 mujoco-scenes
 
 # Inference dependencies
