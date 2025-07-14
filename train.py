@@ -1457,9 +1457,9 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
 
     def get_resets(self, physics_model: ksim.PhysicsModel) -> list[ksim.Reset]:
         return [
-            ksim.RandomJointPositionReset.create(physics_model, {k: v for k, v, _ in JOINT_BIASES}, scale=0.0),
+            ksim.RandomJointPositionReset.create(physics_model, {k: v for k, v, _ in JOINT_BIASES}, scale=0.1),
             ksim.RandomJointVelocityReset(),
-            # ksim.RandomHeadingReset(), # because only naive forward reward is used at the moment
+            ksim.RandomHeadingReset(),
         ]
 
     def get_observations(self, physics_model: ksim.PhysicsModel) -> list[ksim.Observation]:
