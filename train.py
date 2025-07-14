@@ -404,40 +404,40 @@ class XYOrientationReward(ksim.Reward):
 
 @attrs.define(frozen=True)
 class FeetPositionObservation(ksim.Observation):
+    base_idx: int
     foot_left_idx: int
     foot_right_idx: int
-    floor_threshold: float = 0.0
-    in_robot_frame: bool = True
 
     @classmethod
     def create(
         cls,
         *,
         physics_model: ksim.PhysicsModel,
-        foot_left_site_name: str,
-        foot_right_site_name: str,
-        floor_threshold: float = 0.0,
-        in_robot_frame: bool = True,
+        base_body_name: str,
+        foot_left_body_name: str,
+        foot_right_body_name: str,
     ) -> Self:
-        fl = ksim.get_site_data_idx_from_name(physics_model, foot_left_site_name)
-        fr = ksim.get_site_data_idx_from_name(physics_model, foot_right_site_name)
-        return cls(foot_left_idx=fl, foot_right_idx=fr, floor_threshold=floor_threshold, in_robot_frame=in_robot_frame)
+        base = ksim.get_body_data_idx_from_name(physics_model, base_body_name)
+        fl = ksim.get_body_data_idx_from_name(physics_model, foot_left_body_name)
+        fr = ksim.get_body_data_idx_from_name(physics_model, foot_right_body_name)
+        return cls(base_idx=base, foot_left_idx=fl, foot_right_idx=fr)
 
     def observe(self, state: ksim.ObservationInput, curriculum_level: Array, rng: PRNGKeyArray) -> Array:
-        fl_ndarray = ksim.get_site_pose(state.physics_state.data, self.foot_left_idx)[0] + jnp.array(
-            [0.0, 0.0, self.floor_threshold]
-        )
-        fr_ndarray = ksim.get_site_pose(state.physics_state.data, self.foot_right_idx)[0] + jnp.array(
-            [0.0, 0.0, self.floor_threshold]
-        )
+        # get global positions
+        base_pos = state.physics_state.data.xpos[self.base_idx]
+        left_foot_pos = state.physics_state.data.xpos[self.foot_left_idx]
+        right_foot_pos = state.physics_state.data.xpos[self.foot_right_idx]
 
-        if self.in_robot_frame:
-            # Transform foot positions to robot frame
-            base_quat = state.physics_state.data.qpos[3:7]  # Base quaternion
-            fl = xax.rotate_vector_by_quat(jnp.array(fl_ndarray), base_quat, inverse=True)
-            fr = xax.rotate_vector_by_quat(jnp.array(fr_ndarray), base_quat, inverse=True)
+        base_yaw = xax.quat_to_euler(state.physics_state.data.xquat[self.base_idx, :])[2]
+        base_yaw_quat = xax.euler_to_quat(jnp.stack([jnp.zeros_like(base_yaw), jnp.zeros_like(base_yaw), base_yaw], axis=-1))
 
-        return jnp.concatenate([fl, fr], axis=-1)
+        # transform feet pos to base frame
+        relative_left_foot_pos = left_foot_pos - base_pos
+        relative_right_foot_pos = right_foot_pos - base_pos
+        fl_ndarray = xax.rotate_vector_by_quat(relative_left_foot_pos, base_yaw_quat, inverse=True)
+        fr_ndarray = xax.rotate_vector_by_quat(relative_right_foot_pos, base_yaw_quat, inverse=True)
+
+        return jnp.concatenate([fl_ndarray, fr_ndarray], axis=-1)
 
 
 @attrs.define(frozen=True)
@@ -687,17 +687,27 @@ class ImuOrientationObservation(ksim.StatefulObservation):
             ),
         ),
     )
+    bias_euler: tuple[float, float, float] = attrs.field(
+        default=(0.0, 0.0, 0.0),
+        validator=attrs.validators.deep_iterable(
+            attrs.validators.and_(
+                attrs.validators.ge(0.0),
+                attrs.validators.le(math.pi),
+            ),
+        ),
+    )
 
     @classmethod
     def create(
         cls,
         *,
         physics_model: ksim.PhysicsModel,
+        noise: float = 0.0,
         framequat_name: str,
         lag_range: tuple[float, float] = (0.01, 0.1),
-        noise: float = 0.0,
+        bias_euler: tuple[float, float, float] = (0.0, 0.0, 0.0),
     ) -> Self:
-        """Create a IMU orientation observation from a physics model.
+        """Create an IMU orientation observation from a physics model.
 
         Args:
             physics_model: MuJoCo physics model
@@ -705,6 +715,7 @@ class ImuOrientationObservation(ksim.StatefulObservation):
             lag_range: The range of EMA factors to use, to approximate the
                 variation in the amount of smoothing of the Kalman filter.
             noise: The observation noise
+            bias_euler: The bias in euler angles, in roll, pitch, yaw.
         """
         sensor_name_to_idx_range = ksim.get_sensor_data_idxs_by_name(physics_model)
         if framequat_name not in sensor_name_to_idx_range:
@@ -714,12 +725,20 @@ class ImuOrientationObservation(ksim.StatefulObservation):
         return cls(
             framequat_idx_range=sensor_name_to_idx_range[framequat_name],
             lag_range=lag_range,
+            bias_euler=bias_euler,
             noise=noise,
         )
 
-    def initial_carry(self, physics_state: ksim.PhysicsState, rng: PRNGKeyArray) -> tuple[Array, Array]:
+    def initial_carry(self, physics_state: ksim.PhysicsState, rng: PRNGKeyArray) -> tuple[Array, Array, Array]:
+        lrng, brng = jax.random.split(rng, 2)
         minval, maxval = self.lag_range
-        return jnp.zeros((4,)), jax.random.uniform(rng, (1,), minval=minval, maxval=maxval)
+        lag = jax.random.uniform(lrng, (1,), minval=minval, maxval=maxval)
+
+        bias_range = jnp.array(self.bias_euler)
+        bias = jax.random.uniform(brng, (3,), minval=-bias_range, maxval=bias_range)
+        bias_quat = xax.euler_to_quat(bias)
+
+        return jnp.zeros((4,)), lag, bias_quat
 
     def observe_stateful(
         self,
@@ -727,12 +746,13 @@ class ImuOrientationObservation(ksim.StatefulObservation):
         curriculum_level: Array,
         rng: PRNGKeyArray,
     ) -> tuple[Array, tuple[Array, Array]]:
+        x, lag, bias = state.obs_carry
+
         framequat_start, framequat_end = self.framequat_idx_range
         framequat_data = state.physics_state.data.sensordata[framequat_start:framequat_end].ravel()
 
-        # Add noise
-        # # BUG? noise is added twice? also in ksim rl.py
-        # framequat_data = add_noise(framequat_data, rng, "gaussian", self.noise, curriculum_level)
+        # apply bias noise
+        framequat_data = rotate_quat_by_quat(framequat_data, bias)
 
         # get heading cmd
         heading_yaw_cmd = state.commands["unified_command"][3]
@@ -744,10 +764,10 @@ class ImuOrientationObservation(ksim.StatefulObservation):
         backspun_framequat = jnp.where(backspun_framequat[..., 0] < 0, -backspun_framequat, backspun_framequat)
 
         # Get current Kalman filter state
-        x, lag = state.obs_carry
         x = x * lag + backspun_framequat * (1 - lag)
 
-        return x, (x, lag)
+        return x, (x, lag, bias)
+
 
 
 @attrs.define(frozen=True)
@@ -1354,8 +1374,8 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
 
     def get_observations(self, physics_model: ksim.PhysicsModel) -> list[ksim.Observation]:
         obs_list = [
-            ksim.JointPositionObservation(noise=math.radians(0.00)),
-            ksim.JointVelocityObservation(noise=math.radians(0.0)),
+            ksim.JointPositionObservation(noise=math.radians(2)),
+            ksim.JointVelocityObservation(noise=math.radians(10)),
             ksim.ActuatorForceObservation(),
             FeetechTorqueObservation(),
             ksim.CenterOfMassInertiaObservation(),
@@ -1371,45 +1391,37 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 physics_model=physics_model,
                 framequat_name="imu_site_quat",
                 lag_range=(0.0, 0.1),
+                bias_euler=(0.05, 0.05, 0.0),  # roll, pitch, yaw
                 noise=math.radians(1),
             ),
             ksim.ActuatorAccelerationObservation(),
             ksim.SensorObservation.create(
                 physics_model=physics_model,
-                sensor_name="imu_acc",
-                noise=0.5,
-            ),
-            ksim.SensorObservation.create(
-                physics_model=physics_model,
                 sensor_name="imu_gyro",
                 noise=math.radians(0),
             ),
-        ]
-        # get_observations
-        obs_list += [
             ksim.SensorObservation.create(physics_model=physics_model, sensor_name="left_foot_touch", noise=0.0),
             ksim.SensorObservation.create(physics_model=physics_model, sensor_name="right_foot_touch", noise=0.0),
             ksim.SensorObservation.create(physics_model=physics_model, sensor_name="left_foot_force", noise=0.0),
             ksim.SensorObservation.create(physics_model=physics_model, sensor_name="right_foot_force", noise=0.0),
             FeetPositionObservation.create(
                 physics_model=physics_model,
-                foot_left_site_name="left_foot",
-                foot_right_site_name="right_foot",
-                floor_threshold=0.0,
-                in_robot_frame=True,
+                base_body_name="base",
+                foot_left_body_name="Right_Foot",
+                foot_right_body_name="Left_Foot",
             ),
         ]
 
         # Add action-position observation for each joint
-        obs_list.extend(
-            [
-                ksim.ActPosObservation.create(
-                    physics_model=physics_model,
-                    joint_name=joint_name,
-                )
-                for joint_name, _, _ in JOINT_BIASES
-            ]
-        )
+        # obs_list.extend(
+        #     [
+        #         ksim.ActPosObservation.create(
+        #             physics_model=physics_model,
+        #             joint_name=joint_name,
+        #         )
+        #         for joint_name, _, _ in JOINT_BIASES
+        #     ]
+        # )
 
         return obs_list
 
