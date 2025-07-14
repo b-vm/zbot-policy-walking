@@ -39,21 +39,20 @@ ACTOR_DIM: dict[str, int] = dict(
 CRITIC_DIM: dict[str, int] = dict(
     joint_positions=20,
     joint_velocity=20,
-    com_inertia=250,
-    com_velocity=150,
-    # imu_acc=3,
-    imu_gyro=3,
     imu_quat=4,
-    cmd_all=6,
-    act_force=20,
-    base_pos=3,
-    base_quat=4,
+    cmd_all=7,
+    imu_gyro=3,
     left_touch=1,
     right_touch=1,
     feet_position=6,
-    base_height=1,
+    base_pos=3,
+    base_quat=4,
+    com_inertia=250,
+    com_velocity=150,
     base_lin_vel=3,
     base_ang_vel=3,
+    act_force=20,
+    base_height=1,
 )
 
 NUM_ACTOR_INPUTS = sum(ACTOR_DIM.values())
@@ -1689,3 +1688,5 @@ if __name__ == "__main__":
             render_azimuth=145.0,
         ),
     )
+
+# todo make this a lot faster by less validation + smaller buffers
