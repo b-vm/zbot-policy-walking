@@ -41,7 +41,7 @@ CRITIC_DIM: dict[str, int] = dict(
     joint_velocity=20,
     com_inertia=250,
     com_velocity=150,
-    imu_acc=3,
+    # imu_acc=3,
     imu_gyro=3,
     imu_quat=4,
     cmd_all=6,
@@ -1553,7 +1553,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         base_ang_vel_3 = observations["base_angular_velocity_observation"]
         actuator_force_n = observations["actuator_force_observation"]
         base_height = observations["base_height_observation"]
-        imu_acc_3 = observations["sensor_observation_imu_acc"]
+        # imu_acc_3 = observations["sensor_observation_imu_acc"]
         imu_gyro_3 = observations["sensor_observation_imu_gyro"]
 
         obs_n = jnp.concatenate(
@@ -1562,7 +1562,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 joint_vel_n / 10.0,  # NUM_JOINTS
                 imu_quat_4,  # 4
                 cmd,  # 6
-                imu_acc_3,
+                # imu_acc_3,
                 imu_gyro_3,
                 left_touch,
                 right_touch,
@@ -1679,11 +1679,13 @@ if __name__ == "__main__":
             ctrl_dt=0.02,
             iterations=8,
             ls_iterations=8,
+            # sim2real parameters.
+            action_latency_range=(0.003, 0.10),
+            drop_action_prob=0.05,
             # Checkpointing parameters.
             save_every_n_seconds=60,
             valid_every_n_steps=5,
             render_full_every_n_seconds=10,
             render_azimuth=145.0,
-            action_latency_range=(0.003, 0.10),
         ),
     )
