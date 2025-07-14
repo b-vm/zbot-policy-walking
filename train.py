@@ -1667,7 +1667,7 @@ if __name__ == "__main__":
     ZbotWalkingTask.launch(
         ZbotWalkingTaskConfig(
             # Training parameters.
-            num_envs=2048,
+            num_envs=4096,
             batch_size=256,
             learning_rate=1e-3,
             num_passes=4,
