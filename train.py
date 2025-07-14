@@ -1457,6 +1457,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             SingleFootContactReward(scale=0.5, ctrl_dt=self.config.ctrl_dt, grace_period=0.2),
             FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.1),
             ArmPositionReward.create_reward(physics_model, scale=0.05, error_scale=0.05),
+            BaseHeightReward(scale=0.05, error_scale=0.03, standard_height=0.28), # only works on scene 'smooth'
 
             # FeetOrientationReward.create(
             #     physics_model,
@@ -1673,6 +1674,8 @@ if __name__ == "__main__":
             num_passes=4,
             epochs_per_log_step=1,
             rollout_length_seconds=2.0,
+            gamma=0.99,
+            lam=0.95,
             # Simulation parameters.
             dt=0.002,
             ctrl_dt=0.02,
@@ -1690,4 +1693,4 @@ if __name__ == "__main__":
         ),
     )
 
-# todo make this a lot faster by less validation + smaller buffers
+# todo; bigger batch size, lower lr, better hyperparms - gamma way t0o high
