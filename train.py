@@ -212,9 +212,9 @@ class UnifiedCommand(ksim.Command):
         ry = jax.random.uniform(rng_h, (1,), minval=self.ry_range[0], maxval=self.ry_range[1])
 
         # don't like super small velocity commands
-        vx = jnp.where(jnp.abs(vx) < 0.09, 0.0, vx)
-        vy = jnp.where(jnp.abs(vy) < 0.09, 0.0, vy)
-        wz = jnp.where(jnp.abs(wz) < 0.09, 0.0, wz)
+        vx = jnp.where(jnp.abs(vx) < 0.02, 0.0, vx)
+        vy = jnp.where(jnp.abs(vy) < 0.02, 0.0, vy)
+        wz = jnp.where(jnp.abs(wz) < 0.02, 0.0, wz)
 
         _ = jnp.zeros_like(vx)
 
@@ -223,16 +223,21 @@ class UnifiedCommand(ksim.Command):
         sideways_cmd = jnp.concatenate([_, vy, _, bh, _, _])
         rotate_cmd = jnp.concatenate([_, _, wz, bh, _, _])
         omni_cmd = jnp.concatenate([vx, vy, wz, bh, _, _])
-        stand_cmd = jnp.concatenate([_, _, _, bhs, rx, ry])
+        stand_bend_cmd = jnp.concatenate([_, _, _, bhs, rx, ry])
+        stand_cmd = jnp.concatenate([_, _, _, _, _, _])
 
         # randomly select a mode
         mode = jax.random.randint(rng_a, (), minval=0, maxval=6)  # 0 1 2 3 4s 5s -- 2/6 standing
-        cmd = jnp.where(
-            mode == 0,
-            forward_cmd,
-            jnp.where(
-                mode == 1, sideways_cmd, jnp.where(mode == 2, rotate_cmd, jnp.where(mode == 3, omni_cmd, stand_cmd))
-            ),
+        cmd = jax.lax.switch(
+            mode,
+            [
+                lambda: forward_cmd,
+                lambda: sideways_cmd,
+                lambda: rotate_cmd,
+                lambda: omni_cmd,
+                lambda: stand_bend_cmd,
+                lambda: stand_cmd,
+            ],
         )
 
         # get initial heading
@@ -410,21 +415,6 @@ class XYOrientationReward(ksim.Reward):
 
         quat_error = 1 - jnp.sum(base_xy_quat_cmd * base_xy_quat, axis=-1) ** 2
         return jnp.exp(-quat_error / self.error_scale)
-
-
-# Constant Zero Command, currently to match command dims from joystick.
-@attrs.define(frozen=True)
-class ConstantZeroCommand(ksim.Command):
-    ctrl_dt: float
-
-    def get_name(self) -> str:
-        return COMMAND_NAME
-
-    def initial_command(self, physics_data: ksim.PhysicsData, *_: object) -> Array:
-        return jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-
-    def __call__(self, prev_command: Array, physics_data: ksim.PhysicsData, *_: object) -> Array:
-        return jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
 
 @attrs.define(frozen=True)
@@ -1535,9 +1525,17 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
 
     def get_commands(self, physics_model: ksim.PhysicsModel) -> list[ksim.Command]:
         return [
-            ConstantZeroCommand(
+            UnifiedCommand(
+                vx_range=(-0.3, 0.3),  # m/s
+                vy_range=(-0.2, 0.2),  # m/s
+                wz_range=(-0.5, 0.5),  # rad/s
+                bh_range=(0.0, 0.0),  # m # disabled for now, does not work on this robot. reward conflicts
+                bh_standing_range=(-0.2, 0.0),  # m
+                rx_range=(-0.3, 0.3),  # rad
+                ry_range=(-0.3, 0.3),  # rad
                 ctrl_dt=self.config.ctrl_dt,
-            )
+                switch_prob=self.config.ctrl_dt / 5,  # once per x seconds
+            ),
         ]
 
     def get_rewards(self, physics_model: ksim.PhysicsModel) -> list[ksim.Reward]:
