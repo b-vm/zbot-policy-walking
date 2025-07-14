@@ -1471,12 +1471,10 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         ]
 
     def get_curriculum(self, physics_model: ksim.PhysicsModel) -> ksim.Curriculum:
-        return ksim.EpisodeLengthCurriculum(
-            num_levels=30,
-            increase_threshold=30.0,
-            decrease_threshold=10.0,
-            min_level_steps=10,
-            min_level=0.5,
+        return ksim.LinearCurriculum(
+            step_size=1,
+            step_every_n_epochs=1,
+            min_level=1.0,  # disable curriculum
         )
 
     def get_model(self, key: PRNGKeyArray) -> Model:
