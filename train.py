@@ -1674,7 +1674,7 @@ if __name__ == "__main__":
             epochs_per_log_step=1,
             rollout_length_seconds=8.0,
             # Simulation parameters.
-            dt=0.001,
+            dt=0.002,
             ctrl_dt=0.02,
             iterations=8,
             ls_iterations=8,
@@ -1682,8 +1682,9 @@ if __name__ == "__main__":
             action_latency_range=(0.003, 0.10),
             drop_action_prob=0.05,
             # Checkpointing parameters.
-            save_every_n_seconds=60,
-            valid_every_n_steps=5,
+            save_every_n_seconds=5*60,
+            valid_every_n_steps=100,
+            valid_every_n_seconds=None,
             render_full_every_n_seconds=10,
             render_azimuth=145.0,
         ),
