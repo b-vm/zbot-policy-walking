@@ -1672,7 +1672,7 @@ if __name__ == "__main__":
             learning_rate=1e-3,
             num_passes=4,
             epochs_per_log_step=1,
-            rollout_length_seconds=8.0,
+            rollout_length_seconds=2.0,
             # Simulation parameters.
             dt=0.002,
             ctrl_dt=0.02,
