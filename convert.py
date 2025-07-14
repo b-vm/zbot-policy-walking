@@ -59,7 +59,7 @@ def main() -> None:
     mujoco_model = task.get_mujoco_model()
     joint_names = ksim.get_joint_names_in_order(mujoco_model)[1:]  # Removes the root joint.
 
-    carry_shape = (task.config.depth, task.config.hidden_size)
+    carry_shape = (task.config.depth + 1, task.config.hidden_size) # +1 to hack in a tensor for heading carry
 
     @jax.jit
     def init_fn() -> Array:
@@ -70,30 +70,48 @@ def main() -> None:
         joint_angles: Array,
         joint_angular_velocities: Array,
         quaternion: Array,
-        initial_heading: Array,
         command: Array,
         carry: Array,
     ) -> tuple[Array, Array]:
-        heading_quat = xax.euler_to_quat(jnp.array([0.0, 0.0, command[..., 2]]))
-        init_quat = xax.euler_to_quat(jnp.array([0.0, 0.0, initial_heading.squeeze()]))
+        heading_carry = carry[0]
+        model_carry = carry[1:]
 
-        rel_quat = rotate_quat_by_quat(quaternion, init_quat, inverse=True)
-        spun_quat = rotate_quat_by_quat(rel_quat, heading_quat, inverse=True)
-        spun_quat = jnp.where(spun_quat[..., 0] < 0, -spun_quat, spun_quat)
+        # initialize heading if first step. use heading[1] == 1.0 to record if we have already initialized.
+        initial_heading = jnp.array([xax.quat_to_euler(quaternion)[2], 1.0])
+        heading_carry = heading_carry.at[0].set(jnp.where(heading_carry[1] == 0.0, initial_heading[0], heading_carry[0]))
+        heading_carry = heading_carry.at[1].set(jnp.where(heading_carry[1] == 0.0, initial_heading[1], heading_carry[1]))
+
+        cmd_vel = command[..., :2]
+        cmd_yaw_rate = command[..., 2:3]
+        cmd_body_height = command[..., 3:4]
+        cmd_body_orientation = command[..., 4:6]
+
+        # update heading based on yaw rate command
+        heading = heading_carry[0] + cmd_yaw_rate * 0.02 # TODO hardcoding dt for now
+        heading_carry = heading_carry.at[0].set(heading.squeeze())
+
+        heading_quat = xax.euler_to_quat(jnp.array([0.0, 0.0, heading.squeeze()]))
+        backspun_quat = rotate_quat_by_quat(quaternion, heading_quat, inverse=True)
+
+        # ensure positive w component
+        positive_backspun_quat = jnp.where(backspun_quat[..., 0] < 0, -backspun_quat, backspun_quat)
+
 
         obs = jnp.concatenate(
             [
                 joint_angles,
                 joint_angular_velocities,
-                spun_quat,
-                command[..., :2],  # vx, vy
-                command[..., 2:3],  # heading
-                command[..., 3:],  # bh, rx, ry
+                positive_backspun_quat,
+                cmd_vel,
+                cmd_yaw_rate,
+                cmd_body_height,
+                cmd_body_orientation,
             ],
             axis=-1,
         )
 
-        dist, carry = model.actor.forward(obs, carry)
+        dist, model_carry = model.actor.forward(obs, model_carry)
+        carry = jnp.concatenate([heading_carry[None, :], model_carry], axis=0)
         return dist.mode(), carry
 
     metadata = PyModelMetadata(

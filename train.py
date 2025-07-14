@@ -1542,7 +1542,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
 
     def get_rewards(self, physics_model: ksim.PhysicsModel) -> list[ksim.Reward]:
         return [
-            ksim.StayAliveReward(scale=1.0),
+            # ksim.StayAliveReward(scale=1.0),
             ksim.UprightReward(scale=1.0),
             ksim.NaiveForwardReward(scale=5.0, clip_min=None, clip_max=0.2),
             ksim.NaiveForwardOrientationReward(scale=0.3),
@@ -1553,12 +1553,12 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 scale=-5.0,
             ),
             SimpleSingleFootContactReward(scale=0.3, stand_still_threshold=None),
-            FeetAirtimeReward(
-                scale=10.0,
-                ctrl_dt=self.config.ctrl_dt,
-                touchdown_penalty=0.1,
-                stand_still_threshold=None,
-            ),
+            # FeetAirtimeReward(
+            #     scale=10.0,
+            #     ctrl_dt=self.config.ctrl_dt,
+            #     touchdown_penalty=0.1,
+            #     stand_still_threshold=None,
+            # ),
             FeetOrientationReward.create(
                 physics_model,
                 target_rp=(0.0, 0.0),
@@ -1587,12 +1587,12 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             #    scale_by_curriculum=True,
             #),
             #ksim.ActionVelocityPenalty(scale=-2.0, scale_by_curriculum=True),
-            ksim.ReachabilityPenalty(
-                delta_max_j=tuple(float(x) for x in self.delta_max_j),
-                scale=-1.0,
-                squared=False,
-                scale_by_curriculum=True,
-            ),
+            # ksim.ReachabilityPenalty(
+            #     delta_max_j=tuple(float(x) for x in self.delta_max_j),
+            #     scale=-1.0,
+            #     squared=False,
+            #     scale_by_curriculum=True,
+            # ),
         ]
 
     def get_terminations(self, physics_model: ksim.PhysicsModel) -> list[ksim.Termination]:
@@ -1642,7 +1642,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 joint_vel_n,   # NUM_JOINTS
                 imu_quat_4,    # 4
                 cmd[..., :2],  # vx, vy
-                cmd[..., 3:4], # heading   (index 3)
+                cmd[..., 3:4], # heading   (index 3) # TODO BUG
                 cmd[..., 4:],  # bh, rx, ry
             ],
             axis=-1,
