@@ -1443,16 +1443,16 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
 
     def get_events(self, physics_model: ksim.PhysicsModel) -> list[ksim.Event]:
         return [
-            ksim.PushEvent(
-                x_linvel=0.1,
-                y_linvel=0.1,
-                z_linvel=0.05,
-                x_angvel=0.0,
-                y_angvel=0.0,
-                z_angvel=0.0,
-                vel_range=(0.05, 0.15),
-                interval_range=(2.0, 4.0),
-            ),
+            # ksim.PushEvent(
+            #     x_linvel=0.1,
+            #     y_linvel=0.1,
+            #     z_linvel=0.05,
+            #     x_angvel=0.0,
+            #     y_angvel=0.0,
+            #     z_angvel=0.0,
+            #     vel_range=(0.05, 0.15),
+            #     interval_range=(2.0, 4.0),
+            # ),
         ]
 
     def get_resets(self, physics_model: ksim.PhysicsModel) -> list[ksim.Reset]:
