@@ -32,7 +32,7 @@ ACTOR_DIM: dict[str, int] = dict(
     joint_velocity=20,
     imu_orientation=4,
     cmd_linear_velocity=2,
-    cmd_absolute_yaw=1,
+    cmd_yaw_rate=1,
     cmd_base_height_roll_pitch=3,
 )
 
@@ -44,16 +44,16 @@ CRITIC_DIM: dict[str, int] = dict(
     imu_acc=3,
     imu_gyro=3,
     imu_quat=4,
-    cmd_all=7,
+    cmd_all=6,
     act_force=20,
     base_pos=3,
     base_quat=4,
 )
 
-NUM_ACTOR_INPUTS = sum(ACTOR_DIM.values())  # 50
-NUM_CRITIC_INPUTS = sum(CRITIC_DIM.values())  # 484
+NUM_ACTOR_INPUTS = sum(ACTOR_DIM.values())
+NUM_CRITIC_INPUTS = sum(CRITIC_DIM.values())
 
-COMMAND_NAME = "zero_command"
+COMMAND_NAME = "unified_command"
 
 
 # These are in the order of the neural network outputs.
@@ -1634,16 +1634,21 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         joint_pos_n = observations["joint_position_observation"]
         joint_vel_n = observations["joint_velocity_observation"]
         imu_quat_4 = observations["imu_orientation_observation"]
-        cmd = commands[COMMAND_NAME]  # shape (...,7)
+        cmd = commands[COMMAND_NAME]
+        cmd_vel = cmd[..., :2]
+        cmd_yaw_rate = cmd[..., 2:3]
+        cmd_body_height = cmd[..., 4:5]
+        cmd_body_orientation = cmd[..., 5:7]
 
         obs_n = jnp.concatenate(
             [
                 joint_pos_n,   # NUM_JOINTS
                 joint_vel_n,   # NUM_JOINTS
                 imu_quat_4,    # 4
-                cmd[..., :2],  # vx, vy
-                cmd[..., 3:4], # heading   (index 3) # TODO BUG
-                cmd[..., 4:],  # bh, rx, ry
+                cmd_vel,
+                cmd_yaw_rate, 
+                cmd_body_height,
+                cmd_body_orientation,
             ],
             axis=-1,
         )
@@ -1666,7 +1671,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         imu_acc_3 = observations["sensor_observation_imu_acc"]
         imu_gyro_3 = observations["sensor_observation_imu_gyro"]
         imu_quat_4 = observations["imu_orientation_observation"]
-        cmd_7 = commands[COMMAND_NAME]  # still 7 elements for critic
+        cmd = commands[COMMAND_NAME]
         act_frc_obs_n = observations["actuator_force_observation"]
         base_pos_3 = observations["base_position_observation"]
         base_quat_4 = observations["base_orientation_observation"]
@@ -1680,7 +1685,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 imu_acc_3,  # 3
                 imu_gyro_3,  # 3
                 imu_quat_4,  # 4
-                cmd_7,  # 7
+                cmd,  # 6
                 act_frc_obs_n / 100.0,  # NUM_JOINTS
                 base_pos_3,  # 3
                 base_quat_4,  # 4
