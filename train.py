@@ -48,6 +48,12 @@ CRITIC_DIM: dict[str, int] = dict(
     act_force=20,
     base_pos=3,
     base_quat=4,
+    left_touch=1,
+    right_touch=1,
+    feet_position=6,
+    base_height=1,
+    base_lin_vel=3,
+    base_ang_vel=3,
 )
 
 NUM_ACTOR_INPUTS = sum(ACTOR_DIM.values())
@@ -320,7 +326,7 @@ class LinearVelocityTrackingReward(ksim.Reward):
     """Reward for tracking the linear velocity."""
 
     error_scale: float = attrs.field(default=0.25)
-    linvel_obs_name: str = attrs.field(default="sensor_observation_base_site_linvel")
+    linvel_obs_name: str = attrs.field(default="base_linear_velocity_observation")
     command_name: str = attrs.field(default="unified_command")
     norm: xax.NormType = attrs.field(default="l2")
 
@@ -523,9 +529,10 @@ class JointPositionPenalty(ksim.JointDeviationPenalty):
         physics_model: ksim.PhysicsModel,
         scale: float = -1.0,
         scale_by_curriculum: bool = False,
+        error_scale: float = 0.1,
     ) -> Self:
         zeros = {k: v for k, v, _ in JOINT_BIASES}
-        weights = {k: w for k, _, w in JOINT_BIASES}
+        weights = {k: v for k, _, v in JOINT_BIASES}
         joint_targets = [zeros[name] for name in names]
         joint_weights = [weights[name] for name in names]
 
@@ -1377,16 +1384,16 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             ksim.JointPositionObservation(noise=math.radians(2)),
             ksim.JointVelocityObservation(noise=math.radians(10)),
             ksim.ActuatorForceObservation(),
-            FeetechTorqueObservation(),
             ksim.CenterOfMassInertiaObservation(),
             ksim.CenterOfMassVelocityObservation(),
-            BaseHeightObservation(),
             ksim.BasePositionObservation(),
             ksim.BaseOrientationObservation(),
             ksim.BaseLinearVelocityObservation(),
             ksim.BaseAngularVelocityObservation(),
             ksim.BaseLinearAccelerationObservation(),
             ksim.BaseAngularAccelerationObservation(),
+            FeetechTorqueObservation(),
+            BaseHeightObservation(),
             ImuOrientationObservation.create(
                 physics_model=physics_model,
                 framequat_name="imu_site_quat",
@@ -1530,31 +1537,44 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         commands: xax.FrozenDict[str, Array],
         carry: Array,
     ) -> tuple[Array, Array]:
-        dh_joint_pos_j = observations["joint_position_observation"]
-        dh_joint_vel_j = observations["joint_velocity_observation"]
-        com_inertia_n = observations["center_of_mass_inertia_observation"]
-        com_vel_n = observations["center_of_mass_velocity_observation"]
-        imu_acc_3 = observations["sensor_observation_imu_acc"]
-        imu_gyro_3 = observations["sensor_observation_imu_gyro"]
+        joint_pos_n = observations["joint_position_observation"] # should really be the noise free versions
+        joint_vel_n = observations["joint_velocity_observation"]
         imu_quat_4 = observations["imu_orientation_observation"]
         cmd = commands["unified_command"]
-        act_frc_obs_n = observations["actuator_force_observation"]
-        base_pos_3 = observations["base_position_observation"]
-        base_quat_4 = observations["base_orientation_observation"]
+
+        left_touch = observations["sensor_observation_left_foot_touch"]
+        right_touch = observations["sensor_observation_right_foot_touch"]
+        feet_position_6 = observations["feet_position_observation"]
+        base_position_3 = observations["base_position_observation"]
+        base_orientation_4 = observations["base_orientation_observation"]
+        com_inertia_n = observations["center_of_mass_inertia_observation"]
+        com_vel_n = observations["center_of_mass_velocity_observation"]
+        base_lin_vel_3 = observations["base_linear_velocity_observation"]
+        base_ang_vel_3 = observations["base_angular_velocity_observation"]
+        actuator_force_n = observations["actuator_force_observation"]
+        base_height = observations["base_height_observation"]
+        imu_acc_3 = observations["sensor_observation_imu_acc"]
+        imu_gyro_3 = observations["sensor_observation_imu_gyro"]
 
         obs_n = jnp.concatenate(
             [
-                dh_joint_pos_j,  # NUM_JOINTS
-                dh_joint_vel_j / 10.0,  # NUM_JOINTS
-                com_inertia_n,  # 250
-                com_vel_n,  # 150
-                imu_acc_3,  # 3
-                imu_gyro_3,  # 3
+                joint_pos_n,  # NUM_JOINTS
+                joint_vel_n / 10.0,  # NUM_JOINTS
                 imu_quat_4,  # 4
                 cmd,  # 6
-                act_frc_obs_n / 100.0,  # NUM_JOINTS
-                base_pos_3,  # 3
-                base_quat_4,  # 4
+                imu_acc_3,
+                imu_gyro_3,
+                left_touch,
+                right_touch,
+                feet_position_6,
+                base_position_3,
+                base_orientation_4,
+                com_inertia_n,
+                com_vel_n, 
+                base_lin_vel_3,
+                base_ang_vel_3,
+                actuator_force_n / 100.0,
+                base_height,
             ],
             axis=-1,
         )
