@@ -1442,7 +1442,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 rx_range=(-0.3, 0.3),  # rad
                 ry_range=(-0.3, 0.3),  # rad
                 ctrl_dt=self.config.ctrl_dt,
-                switch_prob=self.config.ctrl_dt / 5,  # once per x seconds
+                switch_prob=self.config.ctrl_dt / 25,  # once per x seconds
             ),
         ]
 
@@ -1474,7 +1474,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         return [
             ksim.BadZTermination(unhealthy_z_lower=0.05, unhealthy_z_upper=0.5),
             ksim.NotUprightTermination(max_radians=math.radians(60)),
-            ksim.EpisodeLengthTermination(max_length_sec=24),
+            ksim.EpisodeLengthTermination(max_length_sec=60),
         ]
 
     def get_curriculum(self, physics_model: ksim.PhysicsModel) -> ksim.Curriculum:
@@ -1673,12 +1673,12 @@ if __name__ == "__main__":
             learning_rate=1e-3,
             num_passes=4,
             epochs_per_log_step=1,
-            rollout_length_seconds=2.0,
+            rollout_length_seconds=10.0,
             gamma=0.95,
             lam=0.94,
             # Simulation parameters.
             dt=0.002,
-            ctrl_dt=0.02,
+            ctrl_dt=0.1,
             iterations=8,
             ls_iterations=8,
             # sim2real parameters.
