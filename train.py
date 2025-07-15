@@ -1674,8 +1674,8 @@ if __name__ == "__main__":
             num_passes=4,
             epochs_per_log_step=1,
             rollout_length_seconds=2.0,
-            gamma=0.99,
-            lam=0.95,
+            gamma=0.95,
+            lam=0.94,
             # Simulation parameters.
             dt=0.002,
             ctrl_dt=0.02,
@@ -1692,5 +1692,3 @@ if __name__ == "__main__":
             render_azimuth=145.0,
         ),
     )
-
-# todo; bigger batch size, lower lr, better hyperparms - gamma way t0o high

@@ -34,7 +34,6 @@ if [ ! -z "$AWS_ACCESS_KEY_ID" ] && [ ! -z "$AWS_SECRET_ACCESS_KEY" ] && [ ! -z 
     exp_dir="logs/run_$run_id"
     echo "Using experiment directory: $exp_dir"
 
-
     # Start periodic s3 sync in background. s3fs does not work well for tensorboard files.
     (while true; do
         sleep 600
@@ -48,6 +47,7 @@ if [ ! -z "$AWS_ACCESS_KEY_ID" ] && [ ! -z "$AWS_SECRET_ACCESS_KEY" ] && [ ! -z 
             fusermount -u /mnt/logs
             echo "Unmounted S3 bucket"
         fi
+    
     done) &
 
     exec conda run -n ksim "$@" exp_dir=$exp_dir
