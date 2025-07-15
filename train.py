@@ -1454,8 +1454,8 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             XYOrientationReward(scale=0.1, error_scale=0.01),
 
             # shaping
-            SingleFootContactReward(scale=0.5, ctrl_dt=self.config.ctrl_dt, grace_period=0.2),
-            FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.1),
+            SingleFootContactReward(scale=0.5, ctrl_dt=self.config.ctrl_dt, grace_period=0.0),
+            # FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.1),
             ArmPositionReward.create_reward(physics_model, scale=0.05, error_scale=0.05),
             BaseHeightReward(scale=0.05, error_scale=0.03, standard_height=0.28), # only works on scene 'smooth'
 
