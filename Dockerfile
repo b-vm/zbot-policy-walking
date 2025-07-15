@@ -45,6 +45,9 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -
 # Add conda to path
 ENV PATH=${CONDA_DIR}/bin:${PATH}
 
+# Some fucking bullshit
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main https://repo.anaconda.com/pkgs/r
+
 # Create conda environment
 RUN conda create -y -n ksim python=3.11 && \
     conda install -y -c conda-forge libstdcxx-ng -n ksim
