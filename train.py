@@ -1634,7 +1634,7 @@ if __name__ == "__main__":
             gamma=0.95,
             lam=0.94,
             # Simulation parameters.
-            dt=0.002,
+            dt=0.005,
             ctrl_dt=0.1,
             iterations=8,
             ls_iterations=8,
