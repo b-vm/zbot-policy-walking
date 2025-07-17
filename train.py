@@ -1067,27 +1067,44 @@ def trapezoidal_step(
 
     return new_state, (new_position, new_velocity)
 
-@dataclass
 class FeetechActuators(StatefulActuators):
     """Feetech actuator controller."""
-    max_torque_j: Array
-    kp_j: Array 
-    kd_j: Array
-    max_velocity_j: Array
-    max_pwm_j: Array
-    vin_j: Array
-    kt_j: Array
-    r_j: Array
-    vmax_j: Array
-    amax_j: Array
-    error_gain_j: Array
-    dt: float
-    action_noise: float = 0.005
-    action_noise_type: NoiseType = "gaussian"
-    torque_noise: float = 0.02
-    torque_noise_type: NoiseType = "gaussian"
-
-    def __post_init__(self):
+    def __init__(
+        self,
+        max_torque_j: Array,
+        kp_j: Array,
+        kd_j: Array,
+        max_velocity_j: Array,
+        max_pwm_j: Array,
+        vin_j: Array,
+        kt_j: Array,
+        r_j: Array,
+        vmax_j: Array,
+        amax_j: Array,
+        error_gain_j: Array,
+        dt: float,
+        action_noise: float = 0.005,
+        action_noise_type: NoiseType = "gaussian",
+        torque_noise: float = 0.02,
+        torque_noise_type: NoiseType = "gaussian",
+    ):
+        self.max_torque_j = max_torque_j
+        self.kp_j = kp_j
+        self.kd_j = kd_j
+        self.max_velocity_j = max_velocity_j
+        self.max_pwm_j = max_pwm_j
+        self.vin_j = vin_j
+        self.kt_j = kt_j
+        self.r_j = r_j
+        self.vmax_j = vmax_j
+        self.amax_j = amax_j
+        self.error_gain_j = error_gain_j
+        self.dt = dt
+        self.action_noise = action_noise
+        self.action_noise_type = action_noise_type
+        self.torque_noise = torque_noise
+        self.torque_noise_type = torque_noise_type
+        
         self.positive_deadband, self.negative_deadband = self.get_servo_deadband()
 
     def get_servo_deadband(self) -> tuple[float, float]:
