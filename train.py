@@ -1006,32 +1006,6 @@ class PlannerState:
     last_computed_torque: Array
 
 
-def get_servo_deadband() -> tuple[float, float]:
-    """Get deadband values based on current servo configuration."""
-    encoder_resolution = 0.087 * jnp.pi / 180  # radians
-
-    pos_deadband = 2 * encoder_resolution
-    neg_deadband = 2 * encoder_resolution
-
-    return pos_deadband, neg_deadband
-
-
-class FeetechParams(TypedDict):
-    sysid: str
-    max_torque: float
-    armature: float
-    frictionloss: float
-    damping: float
-    vin: float
-    kt: float
-    R: float
-    vmax: float
-    amax: float
-    max_velocity: float
-    max_pwm: float
-    error_gain: float
-
-
 def trapezoidal_step(
     state: PlannerState,
     target_position: Array,
@@ -1093,49 +1067,37 @@ def trapezoidal_step(
 
     return new_state, (new_position, new_velocity)
 
-
+@dataclass
 class FeetechActuators(StatefulActuators):
     """Feetech actuator controller."""
+    max_torque_j: Array
+    kp_j: Array 
+    kd_j: Array
+    max_velocity_j: Array
+    max_pwm_j: Array
+    vin_j: Array
+    kt_j: Array
+    r_j: Array
+    vmax_j: Array
+    amax_j: Array
+    error_gain_j: Array
+    dt: float
+    action_noise: float = 0.005
+    action_noise_type: NoiseType = "gaussian"
+    torque_noise: float = 0.02
+    torque_noise_type: NoiseType = "gaussian"
 
-    def __init__(
-        self,
-        max_torque_j: Array,
-        kp_j: Array,
-        kd_j: Array,
-        max_velocity_j: Array,
-        max_pwm_j: Array,
-        vin_j: Array,
-        kt_j: Array,
-        r_j: Array,
-        vmax_j: Array,
-        amax_j: Array,
-        error_gain_j: Array,
-        dt: float,
-        action_noise: float = 0.005,
-        action_noise_type: NoiseType = "gaussian",
-        torque_noise: float = 0.02,
-        torque_noise_type: NoiseType = "gaussian",
-    ) -> None:
-        self.max_torque_j = max_torque_j
-        self.kp_j = kp_j
-        self.kd_j = kd_j
-        self.max_velocity_j = max_velocity_j
-        self.max_pwm_j = max_pwm_j
-        self.vin_j = vin_j
-        self.kt_j = kt_j
-        self.r_j = r_j
-        self.vmax_j = vmax_j
-        self.amax_j = amax_j
-        self.error_gain_j = error_gain_j
-        self.dt = dt
-        # self.prev_qtarget_j = jnp.zeros_like(self.kp_j)
-        self.action_noise = action_noise
-        self.action_noise_type = action_noise_type
-        self.torque_noise = torque_noise
-        self.torque_noise_type = torque_noise_type
-        self.debug_counter = 0
-        self.positive_deadband = get_servo_deadband()[0]
-        self.negative_deadband = get_servo_deadband()[1]
+    def __post_init__(self):
+        self.positive_deadband, self.negative_deadband = self.get_servo_deadband()
+
+    def get_servo_deadband(self) -> tuple[float, float]:
+        """Get deadband values based on current servo configuration."""
+        encoder_resolution = 0.087 * jnp.pi / 180  # radians
+
+        pos_deadband = 2 * encoder_resolution
+        neg_deadband = 2 * encoder_resolution
+
+        return pos_deadband, neg_deadband
 
     def get_stateful_ctrl(
         self,
@@ -1614,7 +1576,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
 
             next_carry = jax.tree.map(
                 lambda x, y: jnp.where(transition.done, x, y),
-                self.get_initial_model_carry(rng),
+                self.get_initial_model_carry(model, rng),
                 (next_actor_carry, next_critic_carry),
             )
 
@@ -1624,7 +1586,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
 
         return ppo_variables, next_model_carry
 
-    def get_initial_model_carry(self, rng: PRNGKeyArray) -> tuple[Array, Array]:
+    def get_initial_model_carry(self, model: Model, rng: PRNGKeyArray) -> tuple[Array, Array]:
         return (
             jnp.zeros(shape=(self.config.depth, self.config.hidden_size)),
             jnp.zeros(shape=(self.config.depth, self.config.hidden_size)),
