@@ -61,7 +61,9 @@ COPY . .
 
 # Initialize conda environment and install dependencies
 SHELL ["conda", "run", "-n", "ksim", "/bin/bash", "-c"]
-RUN pip install --upgrade --upgrade-strategy eager -r requirements.txt
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install git+https://github.com/b-vm/ksim@e86f7050f380e8f3e576128e4c87109bf2ee58bc && \
+    pip install --upgrade --upgrade-strategy eager -r requirements.txt
 RUN pip install ruff mypy
 
 # Set up display environment variables
