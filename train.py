@@ -545,6 +545,22 @@ class SingleFootContactReward(ksim.StatefulReward):
         return reward, carry
 
 
+@attrs.define(frozen=True)
+class AssymetricContactReward(ksim.Reward):
+    """Reward for having different contact forces on the left and right feet."""
+
+    scale: float = 1.0
+    error_scale: float = 100
+
+    def get_reward(self, traj: ksim.Trajectory) -> Array:
+        left_force = traj.obs["sensor_observation_left_foot_touch"]
+        right_force = traj.obs["sensor_observation_right_foot_touch"]
+        diff = jnp.abs(left_force - right_force)
+
+        is_zero_cmd = jnp.linalg.norm(traj.command["unified_command"][:, :3], axis=-1) < 1e-3
+        return jnp.where(is_zero_cmd, 0.0, jnp.tanh(diff / self.error_scale))
+
+
 @attrs.define(frozen=True, kw_only=True)
 class ContactForcePenalty(ksim.Reward):
     """Penalises vertical forces above threshold."""
@@ -1044,6 +1060,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             #     scale=0.3,
             # ),
             # ksim.ActionVelocityPenalty(scale=-2.0, scale_by_curriculum=True),
+            AssymetricContactReward(scale=0.1, error_scale=100),
         ]
 
     def get_terminations(self, physics_model: ksim.PhysicsModel) -> list[ksim.Termination]:
