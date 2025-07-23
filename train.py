@@ -553,8 +553,8 @@ class AssymetricContactReward(ksim.Reward):
     error_scale: float = 100
 
     def get_reward(self, traj: ksim.Trajectory) -> Array:
-        left_force = traj.obs["sensor_observation_left_foot_touch"]
-        right_force = traj.obs["sensor_observation_right_foot_touch"]
+        left_force = traj.obs["sensor_observation_left_foot_touch"][:, 0]
+        right_force = traj.obs["sensor_observation_right_foot_touch"][:, 0]
         diff = jnp.abs(left_force - right_force)
 
         is_zero_cmd = jnp.linalg.norm(traj.command["unified_command"][:, :3], axis=-1) < 1e-3
