@@ -539,7 +539,7 @@ class SingleFootContactReward(ksim.StatefulReward):
             return new_time, new_time
 
         carry, time_since_single_contact = jax.lax.scan(_body, reward_carry, single)
-        single_contact_grace = time_since_single_contact < self.grace_period
+        single_contact_grace = time_since_single_contact < max(self.ctrl_dt, self.grace_period)
         is_zero_cmd = jnp.linalg.norm(traj.command["unified_command"][:, :3], axis=-1) < 1e-3
         reward = jnp.where(is_zero_cmd, 1.0, single_contact_grace[:, 0])
         return reward, carry
@@ -1060,7 +1060,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             #     scale=0.3,
             # ),
             # ksim.ActionVelocityPenalty(scale=-2.0, scale_by_curriculum=True),
-            AssymetricContactReward(scale=0.3, error_scale=100),
+            AssymetricContactReward(scale=0.3, error_scale=50),
         ]
 
     def get_terminations(self, physics_model: ksim.PhysicsModel) -> list[ksim.Termination]:
