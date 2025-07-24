@@ -3,7 +3,7 @@
 # Training dependencies
 jax[cuda12]
 jaxlib==0.6.0
-ksim
+-e git+https://github.com/b-vm/ksim@7feee92afc51cfc76d2569d96bb177802415a0a8#egg=ksim
 xax
 equinox==0.12.2
 mujoco-scenes
