@@ -1049,7 +1049,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             AngularVelocityTrackingReward(scale=0.1, error_scale=0.005),
             XYOrientationReward(scale=0.1, error_scale=0.01),
             # shaping
-            SingleFootContactReward(scale=0.5, ctrl_dt=self.config.ctrl_dt, grace_period=0.0),
+            SingleFootContactReward(scale=0.3, ctrl_dt=self.config.ctrl_dt, grace_period=0.0),
             # FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.1),
             ArmPositionReward.create_reward(physics_model, scale=0.05, error_scale=0.05),
             BaseHeightReward(scale=0.05, error_scale=0.03, standard_height=0.28),  # only works on scene 'smooth'
@@ -1060,14 +1060,14 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             #     scale=0.3,
             # ),
             # ksim.ActionVelocityPenalty(scale=-2.0, scale_by_curriculum=True),
-            AssymetricContactReward(scale=0.1, error_scale=100),
+            AssymetricContactReward(scale=0.3, error_scale=100),
         ]
 
     def get_terminations(self, physics_model: ksim.PhysicsModel) -> list[ksim.Termination]:
         return [
             ksim.BadZTermination(unhealthy_z_lower=0.05, unhealthy_z_upper=0.5),
             ksim.NotUprightTermination(max_radians=math.radians(60)),
-            ksim.EpisodeLengthTermination(max_length_sec=30),
+            ksim.EpisodeLengthTermination(max_length_sec=24),
         ]
 
     def get_curriculum(self, physics_model: ksim.PhysicsModel) -> ksim.Curriculum:
@@ -1266,12 +1266,12 @@ if __name__ == "__main__":
             learning_rate=1e-3,
             num_passes=4,
             epochs_per_log_step=1,
-            rollout_length_seconds=5.0,
+            rollout_length_seconds=2.0,
             gamma=0.95,
             lam=0.94,
             # Simulation parameters.
             dt=0.005,
-            ctrl_dt=0.05,
+            ctrl_dt=0.02,
             iterations=8,
             ls_iterations=8,
             # sim2real parameters.
