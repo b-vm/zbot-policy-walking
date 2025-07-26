@@ -562,6 +562,91 @@ class AssymetricContactReward(ksim.Reward):
 
 
 @attrs.define(frozen=True, kw_only=True)
+class DenseFeetAirTimeReward(ksim.StatefulReward):
+    """Reward for feet either touching or not touching the ground for some time."""
+
+    threshold: float = attrs.field()
+    ctrl_dt: float = attrs.field()
+    num_feet: int = attrs.field(default=2)
+    start_reward: float = attrs.field(
+        default=0.1,
+        validator=attrs.validators.and_(
+            attrs.validators.ge(0.0),
+            attrs.validators.le(1.0),
+        ),
+    )
+
+    def initial_carry(self, rng: PRNGKeyArray) -> tuple[Array, Array]:
+        return (jnp.zeros(self.num_feet, dtype=jnp.int32), jnp.zeros(self.num_feet, dtype=jnp.int32))
+
+    def get_reward_stateful(
+        self,
+        trajectory: ksim.Trajectory,
+        reward_carry: tuple[Array, Array],
+    ) -> tuple[Array, tuple[Array, Array]]:
+        left_contact = trajectory.obs["sensor_observation_left_foot_touch"] > 0.1
+        right_contact = trajectory.obs["sensor_observation_right_foot_touch"] > 0.1
+        sensor_data_tn = jnp.stack([left_contact[:, 0], right_contact[:, 0]], axis=-1)
+
+        threshold_steps = round(self.threshold / self.ctrl_dt)
+
+        def scan_fn(carry: tuple[Array, Array], x: tuple[Array, Array]) -> tuple[tuple[Array, Array], Array]:
+            count_n, cooldown_n = carry
+            contact_n, done = x
+
+            # The logic for this algorithm is to reward the agent for having
+            # some foot off the ground for up to `threshold_steps` steps, but
+            # then don't reward it for some cooldown period after that.
+            on_cooldown = cooldown_n > 0
+
+            cooldown_n = jnp.where(
+                done,
+                0,
+                jnp.where(
+                    on_cooldown,
+                    cooldown_n - 1,
+                    jnp.where(
+                        contact_n & (count_n > 0),
+                        jnp.minimum(count_n, threshold_steps),
+                        0,
+                    ),
+                ),
+            )
+
+            count_n = jnp.where(
+                done,
+                0,
+                jnp.where(
+                    on_cooldown,
+                    0,
+                    jnp.where(
+                        contact_n,
+                        0,
+                        count_n + 1,
+                    ),
+                ),
+            )
+
+            return (count_n, cooldown_n), count_n
+
+        reward_carry, count_tn = xax.scan(scan_fn, reward_carry, (sensor_data_tn, trajectory.done))
+
+        # Slight upward slope as the steps get longer. Make sure that the
+        # average value will be 1 after taking a full step.
+        reward_tn = (count_tn.astype(jnp.float32) / threshold_steps) * (2.0 - self.start_reward * 2) + self.start_reward
+
+        # Gradually increase reward until `threshold_steps`.
+        reward_tn = jnp.where((count_tn > 0) & (count_tn < threshold_steps), reward_tn, 0.0)
+        reward_t = reward_tn.max(axis=-1)
+
+        # quickly hacking in zero command disabling. TODO needs tuning
+        is_zero_cmd = jnp.linalg.norm(trajectory.command["unified_command"][:, :3], axis=-1) < 1e-3
+        reward_t = jnp.where(is_zero_cmd, 0.0, reward_t)
+
+        return reward_t, reward_carry
+
+
+@attrs.define(frozen=True, kw_only=True)
 class ContactForcePenalty(ksim.Reward):
     """Penalises vertical forces above threshold."""
 
@@ -1051,7 +1136,13 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             #     scale=0.3,
             # ),
             # ksim.ActionVelocityPenalty(scale=-2.0, scale_by_curriculum=True),
-            AssymetricContactReward(scale=0.3, error_scale=50),
+            AssymetricContactReward(scale=0.1, error_scale=25),
+            DenseFeetAirTimeReward(
+                scale=0.05,
+                start_reward=0.0,
+                threshold=0.3,
+                ctrl_dt=0.02#self.config.ctrl_dt,
+            ),
         ]
 
     def get_terminations(self, physics_model: ksim.PhysicsModel) -> list[ksim.Termination]:
