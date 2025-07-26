@@ -697,7 +697,6 @@ class Actor(eqx.Module):
     output_proj: eqx.nn.Linear
     num_inputs: int = eqx.static_field()
     num_outputs: int = eqx.static_field()
-    num_mixtures: int = eqx.static_field()
     min_std: float = eqx.static_field()
     max_std: float = eqx.static_field()
     var_scale: float = eqx.static_field()
@@ -712,7 +711,6 @@ class Actor(eqx.Module):
         max_std: float,
         var_scale: float,
         hidden_size: int,
-        num_mixtures: int,
         depth: int,
     ) -> None:
         # Project input to hidden size
@@ -739,13 +737,12 @@ class Actor(eqx.Module):
         # Project to output
         self.output_proj = eqx.nn.Linear(
             in_features=hidden_size,
-            out_features=num_outputs * 3 * num_mixtures,
+            out_features=num_outputs * 2,  # mean and std
             key=key,
         )
 
         self.num_inputs = num_inputs
         self.num_outputs = num_outputs
-        self.num_mixtures = num_mixtures
         self.min_std = min_std
         self.max_std = max_std
         self.var_scale = var_scale
@@ -758,18 +755,18 @@ class Actor(eqx.Module):
             out_carries.append(x_n)
         out_n = self.output_proj(x_n)
 
-        # Reshape the output to be a mixture of gaussians.
-        slice_len = NUM_JOINTS * self.num_mixtures
-        mean_nm = out_n[..., :slice_len].reshape(NUM_JOINTS, self.num_mixtures)
-        std_nm = out_n[..., slice_len : slice_len * 2].reshape(NUM_JOINTS, self.num_mixtures)
-        logits_nm = out_n[..., slice_len * 2 :].reshape(NUM_JOINTS, self.num_mixtures)
+        # Split into means and stds
+        mean_n = out_n[..., : self.num_outputs]
+        std_n = out_n[..., self.num_outputs :]
 
-        # Softplus and clip to ensure positive standard deviations.
-        std_nm = jnp.clip((jax.nn.softplus(std_nm) + self.min_std) * self.var_scale, max=self.max_std)
+        # Softplus and clip to ensure positive standard deviations
+        std_n = jnp.clip((jax.nn.softplus(std_n) + self.min_std) * self.var_scale, max=self.max_std)
 
-        mean_nm = mean_nm + jnp.array([v for _, v, _ in JOINT_BIASES])[:, None]
+        # Apply bias to the means
+        mean_n = mean_n + jnp.array([v for _, v, _ in JOINT_BIASES])
 
-        dist_n = ksim.MixtureOfGaussians(means_nm=mean_nm, stds_nm=std_nm, logits_nm=logits_nm)
+        # Create diagonal gaussian distribution
+        dist_n = distrax.MultivariateNormalDiag(loc=mean_n, scale_diag=std_n)
 
         return dist_n, jnp.stack(out_carries, axis=0)
 
@@ -843,7 +840,6 @@ class Model(eqx.Module):
         min_std: float,
         max_std: float,
         hidden_size: int,
-        num_mixtures: int,
         depth: int,
     ) -> None:
         self.actor = Actor(
@@ -854,7 +850,6 @@ class Model(eqx.Module):
             max_std=max_std,
             var_scale=1.0,
             hidden_size=hidden_size,
-            num_mixtures=num_mixtures,
             depth=depth,
         )
         self.critic = Critic(
@@ -876,10 +871,6 @@ class ZbotWalkingTaskConfig(ksim.PPOConfig):
     depth: int = xax.field(
         value=5,
         help="The depth for the MLPs.",
-    )
-    num_mixtures: int = xax.field(
-        value=5,
-        help="The number of mixtures for the actor.",
     )
 
     # Optimizer parameters.
@@ -1085,7 +1076,6 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             min_std=0.03,
             max_std=1.0,
             hidden_size=self.config.hidden_size,
-            num_mixtures=self.config.num_mixtures,
             depth=self.config.depth,
         )
 
@@ -1206,8 +1196,10 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             )
 
             transition_ppo_variables = ksim.PPOVariables(
-                log_probs=log_probs,
+                log_probs=jnp.expand_dims(log_probs, axis=0),
                 values=value.squeeze(-1),
+                entropy=jnp.expand_dims(actor_dist.entropy(), axis=0),
+                action_std=actor_dist.stddev(),
             )
 
             next_carry = jax.tree.map(
@@ -1269,6 +1261,7 @@ if __name__ == "__main__":
             rollout_length_seconds=2.0,
             gamma=0.95,
             lam=0.94,
+            entropy_coef=0.0001,
             # Simulation parameters.
             dt=0.005,
             ctrl_dt=0.02,
