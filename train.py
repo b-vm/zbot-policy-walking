@@ -504,15 +504,32 @@ class FeetOrientationReward(ksim.Reward):
         )
 
     def get_reward(self, traj: ksim.Trajectory) -> jnp.ndarray:
-        # 1) quats → euler, keep roll & pitch only
+        # if walking, minimize roll and pitch error
         left_rp = xax.quat_to_euler(traj.xquat[:, self.left_idx, :])[:, :2]
         right_rp = xax.quat_to_euler(traj.xquat[:, self.right_idx, :])[:, :2]
 
-        # 2) absolute error against the target roll and pitch
-        tgt = jnp.array(self.target_rp)
-        err = jnp.abs(left_rp - tgt).sum(axis=-1) + jnp.abs(right_rp - tgt).sum(axis=-1)
+        left_rp_quat = xax.euler_to_quat(jnp.concatenate([left_rp, jnp.zeros_like(left_rp[:, :1])], axis=-1))
+        right_rp_quat = xax.euler_to_quat(jnp.concatenate([right_rp, jnp.zeros_like(right_rp[:, :1])], axis=-1))
 
-        return jnp.exp(-err / self.error_scale)
+        tgt = xax.euler_to_quat(jnp.array([0, 0, 0]))
+        left_rp_error = 1 - jnp.sum(left_rp_quat * tgt, axis=-1) ** 2
+        right_rp_error = 1 - jnp.sum(right_rp_quat * tgt, axis=-1) ** 2
+        rp_error = left_rp_error + right_rp_error
+
+        # if standing, minimize roll, pitch, AND yaw error
+        left_quat = traj.xquat[:, self.left_idx, :]
+        right_quat = traj.xquat[:, self.right_idx, :]
+
+        heading = xax.quat_to_euler(traj.xquat[:, 1, :])[:, 2]
+        tgt = xax.euler_to_quat(jnp.stack([jnp.zeros_like(heading), jnp.zeros_like(heading), heading], axis=-1))
+        left_yaw_error = 1 - jnp.sum(tgt * left_quat, axis=-1) ** 2
+        right_yaw_error = 1 - jnp.sum(tgt * right_quat, axis=-1) ** 2
+        rpy_error = left_yaw_error + right_yaw_error
+
+        is_zero_cmd = jnp.linalg.norm(traj.command["unified_command"][:, :3], axis=-1) < 1e-3
+        total_error = jnp.where(is_zero_cmd, rpy_error, rp_error)
+
+        return jnp.exp(-total_error / self.error_scale)
 
 
 @attrs.define(frozen=True, kw_only=True)
@@ -1113,11 +1130,11 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             SingleFootContactReward(scale=0.3, ctrl_dt=self.config.ctrl_dt, grace_period=0.0),
             # FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.1),
             ArmPositionReward.create_reward(physics_model, scale=0.05, error_scale=0.05),
-            BaseHeightReward(scale=0.05, error_scale=0.03, standard_height=0.28),  # only works on scene 'smooth'
+            BaseHeightReward(scale=0.05, error_scale=0.02, standard_height=0.27),  # only works on scene 'smooth'
             FeetOrientationReward.create(
                 physics_model,
                 target_rp=(0.0, 0.0),
-                error_scale=0.25,
+                error_scale=0.02,
                 scale=0.05,
             ),
             # ksim.ActionVelocityPenalty(scale=-2.0, scale_by_curriculum=True),
