@@ -12,6 +12,9 @@ from kinfer.export.jax import export_fn
 from kinfer.export.serialize import pack
 from kinfer.rust_bindings import PyModelMetadata
 
+# IMU_ROTATION because IMU is not mounted at [1, 0, 0, 0]
+IMU_ROTATION = xax.euler_to_quat(jnp.array([0.0, 0.0, jnp.pi / 2]))
+
 from train import Model, ZbotWalkingTask
 
 
@@ -77,7 +80,8 @@ def main() -> None:
         model_carry = carry[1:]
 
         # initialize heading if first step. use heading[1] == 1.0 to record if we have already initialized.
-        initial_heading = jnp.array([xax.quat_to_euler(quaternion)[2], 1.0])
+        relative_quat = rotate_quat_by_quat(quaternion, IMU_ROTATION, inverse=False)
+        initial_heading = jnp.array([xax.quat_to_euler(relative_quat)[2], 1.0])
         heading_carry = heading_carry.at[0].set(
             jnp.where(heading_carry[1] == 0.0, initial_heading[0], heading_carry[0])
         )
