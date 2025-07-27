@@ -1426,7 +1426,7 @@ if __name__ == "__main__":
             iterations=8,
             ls_iterations=8,
             # sim2real parameters.
-            action_latency_range=(0.003, 0.10),
+            action_latency_range=(0.003, 0.01),
             drop_action_prob=0.05,
             # Checkpointing parameters.
             save_every_n_seconds=5 * 60,
