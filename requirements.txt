@@ -4,7 +4,7 @@
 jax[cuda12]
 jaxlib==0.6.0
 ksim
-xax
+xax==0.3.6
 equinox==0.12.2
 mujoco-scenes
 
