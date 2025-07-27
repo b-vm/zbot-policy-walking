@@ -532,6 +532,66 @@ class FeetOrientationReward(ksim.Reward):
         return jnp.exp(-total_error / self.error_scale)
 
 
+@attrs.define(frozen=True)
+class StandingFeetPositionReward(ksim.Reward):
+    """Reward for keeping the feet next to each other when standing still."""
+
+    error_scale: float = attrs.field(default=0.25)
+    stance_width: float = attrs.field(default=0.3)
+    base_idx: int = attrs.field(default=1)
+    foot_left_idx: int = attrs.field(default=0)
+    foot_right_idx: int = attrs.field(default=0)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        physics_model: ksim.PhysicsModel,
+        base_body_name: str,
+        foot_left_body_name: str,
+        foot_right_body_name: str,
+        scale: float,
+        error_scale: float,
+        stance_width: float,
+    ) -> Self:
+        base = ksim.get_body_data_idx_from_name(physics_model, base_body_name)
+        fl = ksim.get_body_data_idx_from_name(physics_model, foot_left_body_name)
+        fr = ksim.get_body_data_idx_from_name(physics_model, foot_right_body_name)
+        return cls(
+            base_idx=base,
+            foot_left_idx=fl,
+            foot_right_idx=fr,
+            scale=scale,
+            error_scale=error_scale,
+            stance_width=stance_width,
+        )
+
+    def get_reward(self, trajectory: ksim.Trajectory) -> Array:
+        # get global positions
+        global_l_foot_pos = trajectory.xpos[:, self.foot_left_idx]
+        global_r_foot_pos = trajectory.xpos[:, self.foot_right_idx]
+        base_pos = trajectory.xpos[:, self.base_idx]
+        base_quat = trajectory.xquat[:, self.base_idx, :]
+
+        # compute feet pos in base frame
+        l_foot_pos = xax.rotate_vector_by_quat((global_l_foot_pos - base_pos), base_quat, inverse=True)
+        r_foot_pos = xax.rotate_vector_by_quat((global_r_foot_pos - base_pos), base_quat, inverse=True)
+
+        # calculate stance errors
+        stance_x_error = jnp.abs(l_foot_pos[:, 0] - r_foot_pos[:, 0])
+        stance_y_error = jnp.abs(jnp.abs(l_foot_pos[:, 1] - r_foot_pos[:, 1]) - self.stance_width)
+        stance_error = stance_x_error + stance_y_error
+        print("stance x error", stance_x_error)
+        print("stance y error", stance_y_error)
+        print("stance error", stance_error)
+
+        # only apply reward for standing
+        zero_cmd_mask = jnp.linalg.norm(trajectory.command["unified_command"][:, :3], axis=-1) < 1e-3
+        error = jnp.where(zero_cmd_mask, stance_error, 0.0)
+        reward = jnp.exp(-error / self.error_scale)
+        return reward
+
+
 @attrs.define(frozen=True, kw_only=True)
 class SingleFootContactReward(ksim.StatefulReward):
     """Reward having one and only one foot in contact with the ground, while walking.
@@ -1125,9 +1185,9 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             # cmd
             LinearVelocityTrackingReward(scale=0.3, error_scale=0.05),
             AngularVelocityTrackingReward(scale=0.1, error_scale=0.005),
-            XYOrientationReward(scale=0.1, error_scale=0.01),
+            XYOrientationReward(scale=0.2, error_scale=0.002),
             # shaping
-            SingleFootContactReward(scale=0.3, ctrl_dt=self.config.ctrl_dt, grace_period=0.0),
+            SingleFootContactReward(scale=0.2, ctrl_dt=self.config.ctrl_dt, grace_period=0.1),
             # FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.1),
             ArmPositionReward.create_reward(physics_model, scale=0.05, error_scale=0.05),
             BaseHeightReward(scale=0.05, error_scale=0.02, standard_height=0.27),  # only works on scene 'smooth'
@@ -1136,6 +1196,15 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 target_rp=(0.0, 0.0),
                 error_scale=0.02,
                 scale=0.05,
+            ),
+            StandingFeetPositionReward.create(
+                physics_model=physics_model,
+                base_body_name="base",
+                foot_left_body_name="Right_Foot",
+                foot_right_body_name="Left_Foot",
+                scale=0.02,
+                error_scale=0.01,
+                stance_width=0.10
             ),
             # ksim.ActionVelocityPenalty(scale=-2.0, scale_by_curriculum=True),
             DenseFeetAirTimeReward(
