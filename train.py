@@ -581,9 +581,6 @@ class StandingFeetPositionReward(ksim.Reward):
         stance_x_error = jnp.abs(l_foot_pos[:, 0] - r_foot_pos[:, 0])
         stance_y_error = jnp.abs(jnp.abs(l_foot_pos[:, 1] - r_foot_pos[:, 1]) - self.stance_width)
         stance_error = stance_x_error + stance_y_error
-        print("stance x error", stance_x_error)
-        print("stance y error", stance_y_error)
-        print("stance error", stance_error)
 
         # only apply reward for standing
         zero_cmd_mask = jnp.linalg.norm(trajectory.command["unified_command"][:, :3], axis=-1) < 1e-3
