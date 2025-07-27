@@ -1413,13 +1413,13 @@ if __name__ == "__main__":
             # Training parameters.
             num_envs=4096,
             batch_size=256,
-            learning_rate=1e-3,
+            learning_rate=5e-4,
             num_passes=4,
             epochs_per_log_step=1,
             rollout_length_seconds=2.0,
             gamma=0.95,
             lam=0.94,
-            entropy_coef=0.0001,
+            entropy_coef=0.001,
             # Simulation parameters.
             dt=0.005,
             ctrl_dt=0.02,
