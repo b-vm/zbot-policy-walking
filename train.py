@@ -1182,9 +1182,9 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             # cmd
             LinearVelocityTrackingReward(scale=0.3, error_scale=0.05),
             AngularVelocityTrackingReward(scale=0.1, error_scale=0.005),
-            XYOrientationReward(scale=0.2, error_scale=0.002),
+            XYOrientationReward(scale=0.1, error_scale=0.002),
             # shaping
-            SingleFootContactReward(scale=0.2, ctrl_dt=self.config.ctrl_dt, grace_period=0.1),
+            SingleFootContactReward(scale=0.3, ctrl_dt=self.config.ctrl_dt, grace_period=0.1),
             # FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.1),
             ArmPositionReward.create_reward(physics_model, scale=0.05, error_scale=0.05),
             BaseHeightReward(scale=0.05, error_scale=0.02, standard_height=0.27),  # only works on scene 'smooth'
