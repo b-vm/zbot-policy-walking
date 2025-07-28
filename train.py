@@ -29,6 +29,7 @@ ACTOR_DIM: dict[str, int] = dict(
     joint_positions=20,
     joint_velocity=20,
     imu_orientation=4,
+    cmd_zero=1,
     cmd_linear_velocity=2,
     cmd_yaw_rate=1,
     cmd_base_height_roll_pitch=3,
@@ -38,7 +39,7 @@ CRITIC_DIM: dict[str, int] = dict(
     joint_positions=20,
     joint_velocity=20,
     imu_quat=4,
-    cmd_all=7,
+    cmd_all=8,
     imu_gyro=3,
     left_touch=1,
     right_touch=1,
@@ -1248,21 +1249,24 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         joint_pos_n = observations["joint_position_observation"]
         joint_vel_n = observations["joint_velocity_observation"]
         imu_quat_4 = observations["imu_orientation_observation"]
+        
         cmd = commands["unified_command"]
-        cmd_vel = cmd[..., :2]
-        cmd_yaw_rate = cmd[..., 2:3]
-        cmd_body_height = cmd[..., 4:5]
-        cmd_body_orientation = cmd[..., 5:7]
+        zero_cmd = (jnp.linalg.norm(cmd[..., :3], axis=-1) < 1e-3)[..., None]
+        lin_vel_cmd = cmd[..., :2]
+        ang_vel_cmd = cmd[..., 2:3]
+        base_height_cmd = cmd[..., 3:4]
+        base_roll_pitch_cmd = cmd[..., 4:6]
 
         obs_n = jnp.concatenate(
             [
                 joint_pos_n,  # NUM_JOINTS
                 joint_vel_n,  # NUM_JOINTS
                 imu_quat_4,  # 4
-                cmd_vel,
-                cmd_yaw_rate,
-                cmd_body_height,
-                cmd_body_orientation,
+                zero_cmd,  # 1
+                lin_vel_cmd,  # 2
+                ang_vel_cmd,  # 1
+                base_height_cmd,  # 1
+                base_roll_pitch_cmd,  # 2
             ],
             axis=-1,
         )
@@ -1282,7 +1286,13 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         joint_vel_n = observations["joint_velocity_observation"]
         imu_quat_4 = observations["imu_orientation_observation"]
         cmd = commands["unified_command"]
+        zero_cmd = (jnp.linalg.norm(cmd[..., :3], axis=-1) < 1e-3)[..., None]
+        lin_vel_cmd = cmd[..., :2]
+        ang_vel_cmd = cmd[..., 2:3]
+        base_height_cmd = cmd[..., 3:4]
+        base_roll_pitch_cmd = cmd[..., 4:6]
 
+        imu_gyro_3 = observations["sensor_observation_imu_gyro"]
         left_touch = observations["sensor_observation_left_foot_touch"]
         right_touch = observations["sensor_observation_right_foot_touch"]
         feet_position_6 = observations["feet_position_observation"]
@@ -1294,16 +1304,18 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         base_ang_vel_3 = observations["base_angular_velocity_observation"]
         actuator_force_n = observations["actuator_force_observation"]
         base_height = observations["base_height_observation"]
-        # imu_acc_3 = observations["sensor_observation_imu_acc"]
-        imu_gyro_3 = observations["sensor_observation_imu_gyro"]
 
         obs_n = jnp.concatenate(
             [
                 joint_pos_n,  # NUM_JOINTS
                 joint_vel_n / 10.0,  # NUM_JOINTS
                 imu_quat_4,  # 4
-                cmd,  # 6
-                # imu_acc_3,
+                zero_cmd,  # 1
+                lin_vel_cmd,  # 2
+                ang_vel_cmd,  # 1
+                base_height_cmd,  # 1
+                base_roll_pitch_cmd,  # 2
+                # privileged observations
                 imu_gyro_3,
                 left_touch,
                 right_touch,
