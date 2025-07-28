@@ -39,7 +39,7 @@ CRITIC_DIM: dict[str, int] = dict(
     joint_positions=20,
     joint_velocity=20,
     imu_quat=4,
-    cmd_all=8,
+    cmd_all=7,
     imu_gyro=3,
     left_touch=1,
     right_touch=1,
@@ -1249,8 +1249,8 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         zero_cmd = (jnp.linalg.norm(cmd[..., :3], axis=-1) < 1e-3)[..., None]
         lin_vel_cmd = cmd[..., :2]
         ang_vel_cmd = cmd[..., 2:3]
-        base_height_cmd = cmd[..., 3:4]
-        base_roll_pitch_cmd = cmd[..., 4:6]
+        base_height_cmd = cmd[..., 4:5]
+        base_roll_pitch_cmd = cmd[..., 5:7]
 
         obs_n = jnp.concatenate(
             [
@@ -1284,8 +1284,8 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         zero_cmd = (jnp.linalg.norm(cmd[..., :3], axis=-1) < 1e-3)[..., None]
         lin_vel_cmd = cmd[..., :2]
         ang_vel_cmd = cmd[..., 2:3]
-        base_height_cmd = cmd[..., 3:4]
-        base_roll_pitch_cmd = cmd[..., 4:6]
+        base_height_cmd = cmd[..., 4:5]
+        base_roll_pitch_cmd = cmd[..., 5:7]
 
         imu_gyro_3 = observations["sensor_observation_imu_gyro"]
         left_touch = observations["sensor_observation_left_foot_touch"]
