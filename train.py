@@ -1181,7 +1181,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             XYOrientationReward(scale=0.1, error_scale=0.002),
             # shaping
             SingleFootContactReward(scale=0.3, ctrl_dt=self.config.ctrl_dt, grace_period=0.1),
-            # FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.1),
+            FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.1),
             ArmPositionReward.create_reward(physics_model, scale=0.05, error_scale=0.05),
             BaseHeightReward(scale=0.05, error_scale=0.02, standard_height=0.27),  # only works on scene 'smooth'
             FeetOrientationReward.create(
@@ -1200,12 +1200,12 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 stance_width=0.10
             ),
             # ksim.ActionVelocityPenalty(scale=-2.0, scale_by_curriculum=True),
-            DenseFeetAirTimeReward(
-                scale=0.1,
-                start_reward=0.0,
-                threshold=0.3,
-                ctrl_dt=0.02#self.config.ctrl_dt,
-            ),
+            # DenseFeetAirTimeReward(
+            #     scale=0.1,
+            #     start_reward=0.0,
+            #     threshold=0.3,
+            #     ctrl_dt=0.02#self.config.ctrl_dt,
+            # ),
         ]
 
     def get_terminations(self, physics_model: ksim.PhysicsModel) -> list[ksim.Termination]:
