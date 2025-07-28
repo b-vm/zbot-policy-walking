@@ -149,11 +149,6 @@ class UnifiedCommand(ksim.Command):
         rx = jax.random.uniform(rng_g, (1,), minval=self.rx_range[0], maxval=self.rx_range[1])
         ry = jax.random.uniform(rng_h, (1,), minval=self.ry_range[0], maxval=self.ry_range[1])
 
-        # don't like super small velocity commands
-        vx = jnp.where(jnp.abs(vx) < 0.02, 0.0, vx)
-        vy = jnp.where(jnp.abs(vy) < 0.02, 0.0, vy)
-        wz = jnp.where(jnp.abs(wz) < 0.02, 0.0, wz)
-
         _ = jnp.zeros_like(vx)
 
         # Create each mode's command vector
