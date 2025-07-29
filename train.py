@@ -1026,6 +1026,10 @@ class ZbotWalkingTaskConfig(ksim.PPOConfig):
         value=1e-5,
         help="Weight decay for the Adam optimizer.",
     )
+    mirror_loss_scale: float = xax.field(
+        value=0.01,
+        help="Scale for the mirror loss",
+    )
 
     # Rendering parameters.
     render_track_body_id: int | None = xax.field(
@@ -1052,6 +1056,83 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         )
 
         return optimizer
+
+    def mirror_joints(self, j: Array) -> Array:
+        """Mirror the joint positions/velocities from left to right and vice versa."""
+        assert j.shape[-1] == NUM_JOINTS, f"Joints must be {NUM_JOINTS}-dimensional"
+        j_m = jnp.zeros_like(j)
+
+        # Mirror legs (first 12 joints)
+        # Right leg (0-5) to left leg (6-11)
+        j_m = j_m.at[..., 0:6].set(j[..., 6:12])
+        # Left leg (6-11) to right leg (0-5)
+        j_m = j_m.at[..., 6:12].set(j[..., 0:6])
+
+        # Mirror arms (next 8 joints)
+        # Right arm (12-15) to left arm (16-19)
+        j_m = j_m.at[..., 12:16].set(j[..., 16:20])
+        # Left arm (16-19) to right arm (12-15)
+        j_m = j_m.at[..., 16:20].set(j[..., 12:16])
+
+        # Negate roll and yaw angles while preserving pitch
+        # For legs: yaw=0,6; roll=1,7; pitch=2,8; knee=3,9; ankle_pitch=4,10; ankle_roll=5,11
+        j_m = j_m.at[..., 0].multiply(-1)  # right hip yaw
+        j_m = j_m.at[..., 1].multiply(-1)  # right hip roll
+        j_m = j_m.at[..., 5].multiply(-1)  # right ankle roll
+        j_m = j_m.at[..., 6].multiply(-1)  # left hip yaw
+        j_m = j_m.at[..., 7].multiply(-1)  # left hip roll
+        j_m = j_m.at[..., 11].multiply(-1)  # left ankle roll
+
+        # For arms: pitch=12,16; roll=13,17; elbow=14,18; gripper=15,19
+        j_m = j_m.at[..., 13].multiply(-1)  # right shoulder roll
+        j_m = j_m.at[..., 14].multiply(-1)  # right elbow roll
+        j_m = j_m.at[..., 17].multiply(-1)  # left shoulder roll
+        j_m = j_m.at[..., 18].multiply(-1)  # left elbow roll
+
+        return j_m
+
+    def mirror_obs(self, obs: xax.FrozenDict[str, Array]) -> xax.FrozenDict[str, Array]:
+        """Mirror the observations used by the actor."""
+        joint_pos_n_m = self.mirror_joints(obs["joint_position_observation"])
+        joint_vel_n_m = self.mirror_joints(obs["joint_velocity_observation"])
+        imu_quat_4_m = jnp.concatenate(
+            [
+                obs["imu_orientation_observation"][..., :1],  # w
+                -obs["imu_orientation_observation"][..., 1:2],  # x
+                obs["imu_orientation_observation"][..., 2:3],  # y
+                -obs["imu_orientation_observation"][..., 3:],  # z
+            ],
+            axis=-1,
+        )
+
+        obs_m = {
+            "joint_position_observation": joint_pos_n_m,
+            "joint_velocity_observation": joint_vel_n_m,
+            "imu_orientation_observation": imu_quat_4_m,
+        }
+        return obs_m
+
+    def mirror_cmd(self, cmd: xax.FrozenDict[str, Array]) -> xax.FrozenDict[str, Array]:
+        """Mirror the commands."""
+        cmd_u = cmd["unified_command"]
+        cmd_u_m = jnp.concatenate(
+            [
+                cmd_u[..., :1],  # vx
+                -cmd_u[..., 1:2],  # vy
+                -cmd_u[..., 2:3],  # wz
+                -cmd_u[..., 3:4],  # heading
+                cmd_u[..., 4:5],  # base height
+                -cmd_u[..., 5:6],  # rx
+                cmd_u[..., 6:7],  # ry
+            ],
+            axis=-1,
+        )
+        cmd = {"unified_command": cmd_u_m}
+        return cmd
+
+    def unmirror_action(self, action: Array) -> Array:
+        """Unmirror the action by applying the same mirroring operation."""
+        return self.mirror_joints(action)
 
     def get_mujoco_model(self) -> mujoco.MjModel:
         mjcf_path = asyncio.run(ksim.get_mujoco_model_path("zbot", name="robot"))
@@ -1339,11 +1420,11 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         step_keys = jax.random.split(rng, trajectory.action.shape[0])
 
         def scan_fn(
-            actor_critic_carry: tuple[Array, Array],
+            actor_critic_carry: tuple[Array, Array, Array],
             scan_inputs: tuple[ksim.Trajectory, PRNGKeyArray],
-        ) -> tuple[tuple[Array, Array], ksim.PPOVariables]:
+        ) -> tuple[tuple[Array, Array, Array], ksim.PPOVariables]:
             transition, step_key = scan_inputs
-            actor_carry, critic_carry = actor_critic_carry
+            actor_carry, critic_carry, actor_mirror_carry = actor_critic_carry
             actor_dist, next_actor_carry = self.run_actor(
                 model=model.actor,
                 observations=transition.obs,
@@ -1360,24 +1441,42 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 carry=critic_carry,
             )
 
+            # compute mirror loss
+            mirrored_actor_dist, next_actor_mirror_carry = self.run_actor(
+                model=model.actor,
+                observations=self.mirror_obs(transition.obs),
+                commands=self.mirror_cmd(transition.command),
+                carry=actor_mirror_carry,
+                rng=step_key,
+            )
+            unmirrored_actor_dist = self.unmirror_action(mirrored_actor_dist.mean())
+            mse_loss = jnp.mean((actor_dist.mean() - unmirrored_actor_dist) ** 2)
+            mirror_loss = jnp.mean(mse_loss) * self.config.mirror_loss_scale
+
             transition_ppo_variables = ksim.PPOVariables(
                 log_probs=jnp.expand_dims(log_probs, axis=0),
                 values=value.squeeze(-1),
                 entropy=jnp.expand_dims(actor_dist.entropy(), axis=0),
                 action_std=actor_dist.stddev(),
+                aux_losses={"mirror_loss": mirror_loss},
             )
 
             next_carry = jax.tree.map(
                 lambda x, y: jnp.where(transition.done, x, y),
-                self.get_initial_model_carry(model, rng),
-                (next_actor_carry, next_critic_carry),
+                (
+                    jnp.zeros(shape=(self.config.depth, self.config.hidden_size)),
+                    jnp.zeros(shape=(self.config.depth, self.config.hidden_size)),
+                    jnp.zeros(shape=(self.config.depth, self.config.hidden_size)),
+                ),
+                (next_actor_carry, next_critic_carry, next_actor_mirror_carry),
             )
 
             return next_carry, transition_ppo_variables
 
+        # Add a third carry for the mirror actor
+        model_carry = model_carry + (jnp.zeros(shape=(self.config.depth, self.config.hidden_size)),)
         next_model_carry, ppo_variables = jax.lax.scan(scan_fn, model_carry, (trajectory, step_keys))
-
-        return ppo_variables, next_model_carry
+        return ppo_variables, next_model_carry[:-1]
 
     def get_initial_model_carry(self, model: Model, rng: PRNGKeyArray) -> tuple[Array, Array]:
         return (
@@ -1427,6 +1526,7 @@ if __name__ == "__main__":
             gamma=0.95,
             lam=0.94,
             entropy_coef=0.001,
+            mirror_loss_scale=0.01,
             # Simulation parameters.
             dt=0.005,
             ctrl_dt=0.02,
