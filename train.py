@@ -342,8 +342,6 @@ class BaseHeightReward(ksim.Reward):
         commanded_height = trajectory.command["unified_command"][:, 4] + self.standard_height
 
         height_error = jnp.abs(current_height - commanded_height)
-        # is_zero_cmd = jnp.linalg.norm(trajectory.command["unified_command"][:, :3], axis=-1) < 1e-3
-        # height_error = jnp.where(is_zero_cmd, height_error, height_error**2)  # smooth kernel for walking.
         return jnp.exp(-height_error / self.error_scale)
 
 
@@ -1172,12 +1170,12 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             # cmd
             LinearVelocityTrackingReward(scale=0.3, error_scale=0.05),
             AngularVelocityTrackingReward(scale=0.1, error_scale=0.005),
-            XYOrientationReward(scale=0.1, error_scale=0.002),
+            XYOrientationReward(scale=0.2, error_scale=0.002),
+            BaseHeightReward(scale=0.1, error_scale=0.02, standard_height=0.27),  # only works on scene 'smooth'
             # shaping
             SingleFootContactReward(scale=0.3, ctrl_dt=self.config.ctrl_dt, grace_period=0.1),
             FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.4),
             ArmPositionReward.create_reward(physics_model, scale=0.05, error_scale=0.05),
-            BaseHeightReward(scale=0.05, error_scale=0.02, standard_height=0.27),  # only works on scene 'smooth'
             FeetOrientationReward.create(
                 physics_model,
                 target_rp=(0.0, 0.0),
@@ -1189,7 +1187,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 base_body_name="base",
                 foot_left_body_name="Right_Foot",
                 foot_right_body_name="Left_Foot",
-                scale=0.02,
+                scale=0.05,
                 error_scale=0.01,
                 stance_width=0.10
             ),
