@@ -1433,7 +1433,7 @@ if __name__ == "__main__":
             gamma=0.95,
             lam=0.94,
             entropy_coef=0.001,
-            mirror_loss_scale=0.01,
+            mirror_loss_scale=1.0,
             # Simulation parameters.
             dt=0.005,
             ctrl_dt=0.02,
