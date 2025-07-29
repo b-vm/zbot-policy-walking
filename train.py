@@ -394,7 +394,7 @@ class FeetAirtimeReward(ksim.StatefulReward):
         left_feet_airtime_reward = (left_air_shifted - self.touchdown_penalty) * td_l.astype(jnp.float32)
         right_feet_airtime_reward = (right_air_shifted - self.touchdown_penalty) * td_r.astype(jnp.float32)
 
-        reward = left_feet_airtime_reward + right_feet_airtime_reward
+        reward = jnp.minimum(left_feet_airtime_reward + right_feet_airtime_reward, 0.0)
 
         # standing mask
         is_zero_cmd = jnp.linalg.norm(traj.command["unified_command"][:, :3], axis=-1) < 1e-3
