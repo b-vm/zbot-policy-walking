@@ -340,8 +340,11 @@ class BaseHeightReward(ksim.Reward):
     def get_reward(self, trajectory: ksim.Trajectory) -> Array:
         current_height = trajectory.xpos[:, 1, 2]  # 1st body, because world is 0. 2nd element is z.
         commanded_height = trajectory.command["unified_command"][:, 4] + self.standard_height
+        height_diff = current_height - commanded_height 
 
-        height_error = jnp.abs(current_height - commanded_height)
+        # when walking, we dont care about too high, only too low. 
+        is_zero_cmd = jnp.linalg.norm(trajectory.command["unified_command"][:, :3], axis=-1) < 1e-3
+        height_error = jnp.where(is_zero_cmd, jnp.abs(height_diff), jnp.abs(jnp.minimum(height_diff, 0.0)))
         return jnp.exp(-height_error / self.error_scale)
 
 
@@ -1171,7 +1174,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
             LinearVelocityTrackingReward(scale=0.3, error_scale=0.05),
             AngularVelocityTrackingReward(scale=0.1, error_scale=0.005),
             XYOrientationReward(scale=0.2, error_scale=0.002),
-            BaseHeightReward(scale=0.1, error_scale=0.02, standard_height=0.27),  # only works on scene 'smooth'
+            BaseHeightReward(scale=0.1, error_scale=0.02, standard_height=0.26),  # only works on scene 'smooth'
             # shaping
             SingleFootContactReward(scale=0.3, ctrl_dt=self.config.ctrl_dt, grace_period=0.1),
             FeetAirtimeReward(scale=1.0, ctrl_dt=self.config.ctrl_dt, touchdown_penalty=0.4),
