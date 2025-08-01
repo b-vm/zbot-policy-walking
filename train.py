@@ -224,9 +224,10 @@ class LinearVelocityTrackingReward(ksim.Reward):
         # now compute error. special trick: different kernels for standing and walking.
         zero_cmd_mask = jnp.linalg.norm(trajectory.command["unified_command"][:, :3], axis=-1) < 1e-3
         x_vel_error = jnp.abs(robot_vel[:, 0] - robot_vel_cmd[:, 0])
+        y_vel_error = jnp.abs(robot_vel[:, 1] - robot_vel_cmd[:, 1])
         xy_vel_error = jnp.linalg.norm(robot_vel - robot_vel_cmd, axis=-1)
 
-        # to shift center of mass between feet, we need to allow sidewayse movement for x vel walking and angvel rotating
+        # to shift center of mass between feet, we need to allow sideways movement for x vel walking and angvel rotating
         # For x command, use x_vel_error
         # For y command, use xy_vel_error
         # For wz command, use no error
@@ -234,7 +235,17 @@ class LinearVelocityTrackingReward(ksim.Reward):
         x_cmd_mask = jnp.abs(robot_vel_cmd[:, 0]) > 1e-3
         y_cmd_mask = jnp.abs(robot_vel_cmd[:, 1]) > 1e-3
         vel_error = jnp.where(
-            x_cmd_mask, x_vel_error, jnp.where(y_cmd_mask, xy_vel_error, jnp.where(zero_cmd_mask, xy_vel_error, 0.0))
+            x_cmd_mask,
+            x_vel_error + 0.1 * y_vel_error,
+            jnp.where(
+                y_cmd_mask,
+                xy_vel_error,
+                jnp.where(
+                    zero_cmd_mask,
+                    xy_vel_error,
+                    0.1 * xy_vel_error,
+                ),
+            ),
         )
 
         error = jnp.where(zero_cmd_mask, vel_error, jnp.square(vel_error))
@@ -340,9 +351,9 @@ class BaseHeightReward(ksim.Reward):
     def get_reward(self, trajectory: ksim.Trajectory) -> Array:
         current_height = trajectory.xpos[:, 1, 2]  # 1st body, because world is 0. 2nd element is z.
         commanded_height = trajectory.command["unified_command"][:, 4] + self.standard_height
-        height_diff = current_height - commanded_height 
+        height_diff = current_height - commanded_height
 
-        # when walking, we dont care about too high, only too low. 
+        # when walking, we dont care about too high, only too low.
         is_zero_cmd = jnp.linalg.norm(trajectory.command["unified_command"][:, :3], axis=-1) < 1e-3
         height_error = jnp.where(is_zero_cmd, jnp.abs(height_diff), jnp.abs(jnp.minimum(height_diff, 0.0)))
         return jnp.exp(-height_error / self.error_scale)
@@ -614,6 +625,7 @@ class SingleFootContactReward(ksim.StatefulReward):
         is_zero_cmd = jnp.linalg.norm(traj.command["unified_command"][:, :3], axis=-1) < 1e-3
         reward = jnp.where(is_zero_cmd, 1.0, single_contact_grace[:, 0])
         return reward, carry
+
 
 @attrs.define(frozen=True, kw_only=True)
 class ContactForcePenalty(ksim.Reward):
@@ -1192,7 +1204,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
                 foot_right_body_name="Left_Foot",
                 scale=0.05,
                 error_scale=0.01,
-                stance_width=0.10
+                stance_width=0.10,
             ),
             # ksim.ActionVelocityPenalty(scale=-2.0, scale_by_curriculum=True),
         ]
@@ -1233,7 +1245,7 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         joint_pos_n = observations["joint_position_observation"]
         joint_vel_n = observations["joint_velocity_observation"]
         imu_quat_4 = observations["imu_orientation_observation"]
-        
+
         cmd = commands["unified_command"]
         zero_cmd = (jnp.linalg.norm(cmd[..., :3], axis=-1) < 1e-3)[..., None]
         lin_vel_cmd = cmd[..., :2]
