@@ -1000,20 +1000,13 @@ class ZbotWalkingTask(ksim.PPOTask[ZbotWalkingTaskConfig]):
         # Left arm (16-19) to right arm (12-15)
         j_m = j_m.at[..., 16:20].set(j[..., 12:16])
 
-        # Negate roll and yaw angles while preserving pitch
+        # Negate everything except hip pitches, knee pitches, ankle pitches
         # For legs: yaw=0,6; roll=1,7; pitch=2,8; knee=3,9; ankle_pitch=4,10; ankle_roll=5,11
-        j_m = j_m.at[..., 0].multiply(-1)  # right hip yaw
-        j_m = j_m.at[..., 1].multiply(-1)  # right hip roll
-        j_m = j_m.at[..., 5].multiply(-1)  # right ankle roll
-        j_m = j_m.at[..., 6].multiply(-1)  # left hip yaw
-        j_m = j_m.at[..., 7].multiply(-1)  # left hip roll
-        j_m = j_m.at[..., 11].multiply(-1)  # left ankle roll
+        j_m = j_m.at[..., [0,1,5,6,7,11]].multiply(-1)  # negate hip yaw/roll, ankle roll for both legs
+        j_m = j_m.at[..., [2,3,4,8,9,10]].multiply(1)  # preserve hip pitch, knee, ankle pitch for both legs
 
         # For arms: pitch=12,16; roll=13,17; elbow=14,18; gripper=15,19
-        j_m = j_m.at[..., 13].multiply(-1)  # right shoulder roll
-        j_m = j_m.at[..., 14].multiply(-1)  # right elbow roll
-        j_m = j_m.at[..., 17].multiply(-1)  # left shoulder roll
-        j_m = j_m.at[..., 18].multiply(-1)  # left elbow roll
+        j_m = j_m.at[..., [12,13,14,15,16,17,18,19]].multiply(-1)  # negate all arm joints
 
         return j_m
 
